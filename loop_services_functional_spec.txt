@@ -1,0 +1,145 @@
+
+Loop Services – Functional Specification & Build Road‑Map
+=========================================================
+
+Scope
+-----
+Design and implement a **full‑stack demo** of Loop Services that can run
+*locally* without Docker **OR** via Docker‑Compose.  This document drills
+into **exactly which features** must exist, the user flows they support,
+and the technical tasks required to ship them.  
+Wherever useful, we include “Accept Criteria” so you can auto‑test with
+Playwright or Postman.
+
+Actors
+------
+1. **Visitor**  – unauthenticated web user browsing landing page.
+2. **Client**   – company representative hiring talent.
+3. **Talent**   – professional seeking full‑time placement.
+4. **Admin**    – internal Loop ops staff.
+
+High‑Level Feature List
+-----------------------
+| # | Module            | Key Features (MUST)                            | Nice‑To‑Have (Later)            |
+|---|-------------------|-----------------------------------------------|---------------------------------|
+| 1 | Marketing Site    | Hero, pricing slider, FAQ, “Request Talent”   | Blog, testimonials CMS          |
+| 2 | Auth              | Email signup/login, role selection, JWT       | Social login (Google, GitHub)   |
+| 3 | Client Dashboard  | Create project, search talent, invite talent  | Cost estimator, Slack webhook   |
+| 4 | Talent Dashboard  | Complete profile, track vetting, accept offer | Calendar sync (ICS)             |
+| 5 | Project Workroom  | Kanban, task chat, time tracking, files       | Figma & GitHub embeds           |
+| 6 | AI Matching       | POST /ai/match → returns 5 ranked profiles    | Natural‑language talent search  |
+| 7 | Invoicing         | Auto‑PDF per project, Stripe payment link     | Multi‑currency support          |
+| 8 | Admin Console     | Vetting queue, user table, role toggles       | Metrics (NPS, usage, churn)     |
+| 9 | Notifications     | Email on invite/accept, overdue tasks digest  | Web‑push via service‑workers    |
+|10 | Security & Audit  | RBAC guards, rate‑limit, activity log         | 2FA, field‑level access         |
+
+---------------------------------------------------------------------------
+Detailed Functional Breakdown (MVP Requirements)
+---------------------------------------------------------------------------
+
+### 1. Landing / Marketing Site
+* **URL** `/`
+* Components:
+  * Hero w/ Loop logo Lottie animation.
+  * “Pricing” section – HTML range slider updates $/hr cost baseline **live**.
+  * FAQ accordion.
+  * CTA buttons → `/signup?role=client` + “Book Demo” mailto link.
+* **Accept Criteria**
+  1. Lighthouse performance > 90 desktop.
+  2. Google rich snippets for FAQ appear in page source.
+
+### 2. Authentication & On‑Boarding
+* Email + password w/ minimum 8 chars, bcrypt hashing.
+* Roles: CLIENT, TALENT, ADMIN; default = CLIENT unless chosen.
+* **Endpoints**
+  * `POST /auth/signup` `{email, pwd, role}`
+  * `POST /auth/login` → `{token, user}`
+  * `GET  /auth/me`    (JWT)
+* React hooks (`useAuth`) & Higher‑Order Component (`withAuth(role[])`).
+
+### 3. Talent Application Flow
+1. **Profile Form** – resume upload (PDF), headline, skills multiselect.
+2. **Skills Quiz** – 5 MCQ pulled from JSON bank.
+3. **Video Intro** – record 30‑second self‑intro (use getUserMedia → MP4).
+4. **Status Badge** – APPLIED → QUIZ_PASSED → INTERVIEW → HIRED.
+* **DB Tables** `TalentProfile`, `VettingStep`, `Skill`.
+* File uploads stored under `/uploads/resumes/{uuid}.pdf`.
+
+### 4. Client Project Lifecycle
+* `POST /projects` `{name, description, talentIds[]?}`.
+* `PATCH /projects/{id}/invite` – send email + dashboard notif.
+* Project dashboard:
+  * Kanban Columns (*Backlog, In‑Progress, Review, Done*).
+  * Task modal → description (markdown), due date, assignees.
+  * Real‑time updates via WebSocket channel `project:{id}`.
+* **Time Tracking**
+  * Start/Stop button writes `TimeEntry {taskId, minutes}` every 5 min buffer.
+  * Daily summary appears on talent dashboard.
+
+### 5. AI Matching
+* Endpoint: `POST http://localhost:5000/match`
+```json
+{ "project_desc": "Build React admin UI with Tailwind" }
+```
+* Returns array sorted by cosine distance using pgvector.
+* Fallback: keyword search across `skills` array if OPENAI_API_KEY missing.
+
+### 6. Invoices & Stripe Flow
+* Cron job (daily @ 02:00) – aggregates `TimeEntry` → `Invoice`.
+* Invoice PDF created via `pdf‑kit` stored `/uploads/invoices/{uuid}.pdf`.
+* Stripe test‑mode:
+  * Line‑items = invoice minutes × hourly_rate.
+  * Payment URL saved on invoice, visible to client.
+  * Webhook updates `status=PAID`.
+* **Acceptance**
+  * Paying via Stripe **updates** project `balance_due = 0`.
+
+### 7. Admin Console
+* Route `/admin` guarded by `role=ADMIN`.
+* Tables:
+  * **Users** – search, deactivate, role toggle.
+  * **Vetting Queue** – list talent in `QUIZ_PASSED`, open modal to record notes, `Advance` or `Reject`.
+* Activity log (Prisma middleware) stores changes → `/admin/audit`.
+
+### 8. Notifications
+* Nodemailer + Ethereal for local dev.
+  * Templates: `invite‑talent.hbs`, `invoice‑generated.hbs`.
+* Cron digest at 08:00 local – overdue tasks email to client & talent.
+
+---------------------------------------------------------------------------
+Iteration Checklist (Build Order)
+---------------------------------------------------------------------------
+
+| Week | Deliverable                                  |
+|------|----------------------------------------------|
+| 0    | Repo init, Postgres schema, auth endpoints   |
+| 1    | Landing page, signup/login, seed scripts     |
+| 2    | Talent profile form + vetting dashboard      |
+| 3    | Client project creation, Kanban board        |
+| 4    | Real‑time WS, time tracking, AI match API    |
+| 5    | Invoice PDF + Stripe test checkout           |
+| 6    | Admin console, notification emails           |
+| 7    | Polish, Lighthouse pass, e2e Playwright tests|
+
+---------------------------------------------------------------------------
+Auto‑Tests & Acceptance
+---------------------------------------------------------------------------
+1. **Postman collection** in `/tests/postman/LoopDemo.postman_collection.json`
+   – auth, CRUD, payments.
+2. **Playwright e2e**:
+   * Signup client ➔ create project ➔ invite seeded talent ➔ talent logs time ➔
+     invoice generated ➔ Stripe test pay ➔ status shows PAID.
+
+---------------------------------------------------------------------------
+Future Enhancements
+---------------------------------------------------------------------------
+* **Multi‑Currency** – FX table, user preference.
+* **GraphQL Subscriptions** – swap WS impl.
+* **EoR Integrations** – stub Deel/Remote facades.
+* **Mobile App** – same GraphQL contract.
+
+This spec, combined with the non‑Docker or Docker setup guides, equips your
+AI Agent to generate code, migrations, seeders, tests, and CI scripts in the
+correct order with measurable completion targets.
+
+Happy building!  – Loop Services Product & Eng

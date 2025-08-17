@@ -1,0 +1,28 @@
+{
+  "name": "loop-services-demo",
+  "version": "1.0.0",
+  "description": "Loop Services - Employed Talent Marketplace Demo",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server:dev\" \"npm run client:dev\"",
+    "server:dev": "cd server && npm run dev",
+    "client:dev": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "cd server && npm start",
+    "setup": "npm install && cd server && npm install && cd ../client && npm install",
+    "db:migrate": "cd server && npx prisma migrate dev",
+    "db:seed": "cd server && npx prisma db seed",
+    "test": "cd server && npm test && cd ../client && npm test",
+    "test:e2e": "cd tests && npx playwright test",
+    "status": "node status.js",
+    "monitor": "node monitor-ngrok.js",
+    "ngrok": "ngrok http 3000"
+  },
+  "keywords": ["talent", "marketplace", "freelance", "employment"],
+  "author": "Loop Services",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "@playwright/test": "^1.40.0"
+  }
+} 
